@@ -155,7 +155,7 @@ EOF
   [ "$(opt other mouse)|$(opt other window-status-current-format)|$(opt other window-status-format)" = "on||" ] && ok "the other session is untouched" || bad "the other session changed"
   [ "$(tm show-options -gv mouse)" = off ] && ok "the global mouse setting is untouched" || bad "global mouse changed"
   case "$(key)" in *"--tap '#{client_name}'"*'"display-message \"my own tap\""') ok "the binding keeps the person's own tap for other sessions" ;; *) bad "binding: $(key)" ;; esac
-  case "$out" in *"First session"*"📋 copy button is now"*) ok "the first session tells about the button" ;; *) bad "first-session note: ${out:0:300}" ;; esac
+  case "$out" in *"First session"*"📋 copy button is now"*"that copy is the test — do not copy anything else over it"*) ok "the first session tells about the button and tests with the real copy" ;; *) bad "first-session note: ${out:0:300}" ;; esac
   [ -e "$H/.config/autobuffer/welcomed" ] && ok "the first-session mark is written" || bad "no first-session mark"
 
   out="$(r --session-start)"; first_key="$(key)"

@@ -163,7 +163,7 @@ session_start() {
     else
       context+=" autobuffer is installed; there is no 📋 copy button because Claude is not running inside tmux."
     fi
-    context+=" Then run \`autobuffer 'autobuffer-test-<4 random letters>'\` and ask them to paste their clipboard into the chat. An exact match: it works, say so. Anything else: offer the autobuffer setup skill."
+    context+=" Then prove the road with one paste: if this reply already put something on the clipboard with autobuffer, that copy is the test — do not copy anything else over it; otherwise run \`autobuffer 'autobuffer-test-<4 random letters>'\`. Ask them to paste their clipboard into the chat. An exact match: it works, say so. Anything else: offer the autobuffer setup skill."
   fi
   printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' "$(json_string "$context")"
 }
