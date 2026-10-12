@@ -1,6 +1,6 @@
 {
   "name": "autobuffer",
-  "version": "0.1.4",
+  "version": "0.1.5",
   "description": "Everything Claude gives you to copy lands on your clipboard by itself — no selecting text, which hurts most on a phone screen. Missed it? A 📋 copy button in tmux puts it there again. Works over SSH and through tmux (Termius included); a setup skill covers any other terminal.",
   "author": { "name": "gvmatrosov", "url": "https://github.com/gvmatrosov" },
   "repository": "https://github.com/gvmatrosov/autobuffer",
