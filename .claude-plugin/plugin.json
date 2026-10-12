@@ -1,6 +1,6 @@
 {
   "name": "autobuffer",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Whatever you must paste lands on your clipboard — no selecting text off a narrow phone screen. OSC 52 that works through tmux and Termius, a 📋 copy button in tmux's status line, and a skill that builds the same for any other terminal setup.",
   "author": { "name": "gvmatrosov", "url": "https://github.com/gvmatrosov" },
   "repository": "https://github.com/gvmatrosov/autobuffer",
