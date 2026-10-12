@@ -40,7 +40,9 @@ session start. Claude Code only (the plugin ships a small program), not claude.a
 
 Only in Claude's own tmux session and only in tmux's memory — nothing is written to your tmux
 config. In that session the window list is replaced by "📋 copy", centred, and mouse is turned on
-(a tap needs it; in a desktop terminal, selecting text there then needs Shift held). Your other
+(a tap needs it; in a desktop terminal, selecting text there then needs Shift held), and its right
+side shrinks to the clock — Claude Code writes its task title there, and on a phone-width screen
+the usual right side leaves the button no room. Your other
 sessions keep their own look and mouse setting, and a tap on their status line does what it did
 before. `autobuffer --tmux off` takes it out everywhere and remembers; `autobuffer --tmux on`
 brings it back.
@@ -65,6 +67,6 @@ autobuffer --again        # the last text again
 
 `tests/check.sh` — the exact bytes each terminal receives; the button on a real tmux server with a
 robot thumb that attaches like a 46-column phone and taps the status line end to end.
-`tests/check.sh --mutate` breaks autobuffer at 33 spots, one at a time; each must turn a check red.
+`tests/check.sh --mutate` breaks autobuffer at 35 spots, one at a time; each must turn a check red.
 
 MIT license.

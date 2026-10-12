@@ -94,7 +94,9 @@ own_tty() {
 #
 # Only in the tmux session Claude runs in, and only in tmux's memory (nothing is written to the
 # person's tmux config): that session's window list becomes "📋 copy", centred, and gets mouse
-# on — a tap needs it. Other sessions keep their own look and mouse setting.
+# on — a tap needs it. Its right side shrinks to the clock: Claude Code puts its task title
+# there, and on a 46-column phone the default right side (title, time, date) leaves the window
+# list no room at all — the button was simply not drawn. Other sessions keep their own look.
 #
 # A tap on the window list is MouseDown1Status, and a key binding is shared by the whole tmux
 # server. So the binding asks the session first: marked @autobuffer → copy again; any other
@@ -127,7 +129,8 @@ button_on() {   # button_on <session>
   tmux set-option -t "$s" @autobuffer 1 \; set-option -t "$s" mouse on \
     \; set-option -t "$s" window-status-format '' \
     \; set-option -t "$s" window-status-current-format '📋 copy' \
-    \; set-option -t "$s" status-justify centre
+    \; set-option -t "$s" status-justify centre \
+    \; set-option -t "$s" status-right ' %H:%M '
 }
 
 button_off_everywhere() {
@@ -137,7 +140,7 @@ button_off_everywhere() {
     tmux set-option -u -t "$s" @autobuffer \; set-option -u -t "$s" mouse \
       \; set-option -u -t "$s" window-status-format \
       \; set-option -u -t "$s" window-status-current-format \
-      \; set-option -u -t "$s" status-justify
+      \; set-option -u -t "$s" status-justify \; set-option -u -t "$s" status-right
   done
   case "$(tmux list-keys -T root MouseDown1Status 2>/dev/null)" in
     *"--tap '#{client_name}'"*)

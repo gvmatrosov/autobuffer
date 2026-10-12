@@ -2,6 +2,7 @@
 left to right until something answers, and print what reached this terminal.
 
     python3 tests/tap.py <socket> <session> [from_x] [to_x]
+    python3 tests/tap.py <socket> <session> look     is "copy" drawn at all?
 
 Prints `OSC52 <decoded text> ST|BEL` for the first clipboard escape seen, else the status-line
 message the tap produced (`MSG <text>`), else `NOTHING`.
@@ -18,7 +19,8 @@ import termios
 import time
 
 sock, session = sys.argv[1], sys.argv[2]
-lo = int(sys.argv[3]) if len(sys.argv) > 3 else 1
+look_only = len(sys.argv) > 3 and sys.argv[3] == 'look'
+lo = int(sys.argv[3]) if len(sys.argv) > 3 and not look_only else 1
 hi = int(sys.argv[4]) if len(sys.argv) > 4 else 46
 
 pid, fd = pty.fork()
@@ -41,7 +43,11 @@ def drain(seconds):
     return out
 
 
-drain(1.0)
+first = drain(1.0)
+if look_only:
+    os.kill(pid, 9)
+    print('DRAWN' if b'copy' in first else 'NOT DRAWN')
+    sys.exit(0)
 seen = b''
 result = 'NOTHING'
 for x in range(lo, hi + 1):
@@ -55,7 +61,7 @@ for x in range(lo, hi + 1):
         end = st if st >= 0 else bel
         result = f"OSC52 {base64.b64decode(out[i + 7:end]).decode()} {'ST' if st >= 0 else 'BEL'}"
         break
-    m = re.search(rb'(my own tap|\xf0\x9f\x93\x8b [^\x1b\r\n]+)', out)
+    m = re.search(rb'(my own tap|\xf0\x9f\x93\x8b (?:on the clipboard|nothing)[^\x1b\r\n]*)', out)
     if m:
         result = 'MSG ' + m.group(1).decode().strip()
         break

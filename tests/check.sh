@@ -180,15 +180,21 @@ PS
   case "$out" in *"First session"*) bad "the first-session note came twice" ;; *) ok "the first-session note comes once" ;; esac
   [ "$(printf '%s' "$first_key" | grep -o 'my own tap' | wc -l)" = 1 ] && ok "a second start does not nest the binding" || bad "nested: $first_key"
 
+  # Claude Code writes its task title into the pane title, which tmux's default right side
+  # shows; at 46 columns a long one used to squeeze the button out of sight.
+  tm select-pane -t claude -T '✳ Claude Code — fixing the build on the server'
+  res="$(python3 "$TAP" "$SOCK" claude look)"
+  [ "$res" = DRAWN ] && ok "with a long Claude title, 📋 copy is still drawn at 46 columns" || bad "button squeezed out: $res"
+
   # The robot thumb, end to end: hook → binding → --tap → that client's tty.
   ( umask 077; mkdir -p "$H/.cache/autobuffer"; printf 'tap-proof-42' > "$H/.cache/autobuffer/last.claude" )
-  res="$(python3 "$TAP" "$SOCK" claude 8 24)"
+  res="$(python3 "$TAP" "$SOCK" claude 1 46)"
   [ "$res" = "OSC52 tap-proof-42 ST" ] && ok "a tap on 📋 copy puts the session's text on the tapping terminal (ST)" || bad "robot tap in claude: $res"
   res="$(python3 "$TAP" "$SOCK" other 1 30)"
   [ "$res" = "MSG my own tap" ] && ok "a tap in another session does what the person bound" || bad "robot tap in other: $res"
 
   r --tmux off >/dev/null
-  [ -z "$(opt claude mouse)$(opt claude window-status-current-format)$(opt claude @autobuffer)" ] && ok "off: Claude's session gets its own look back" || bad "off left options"
+  [ -z "$(opt claude mouse)$(opt claude window-status-current-format)$(opt claude @autobuffer)$(opt claude status-right)" ] && ok "off: Claude's session gets its own look back" || bad "off left options"
   [ "$(key)" = 'bind-key -T root MouseDown1Status display-message "my own tap"' ] && ok "off: the person's own tap is back exactly" || bad "off binding: $(key)"
   [ -z "$(tm show-options -gv @autobuffer-prev 2>/dev/null)" ] && ok "off: no leftover option" || bad "off left @autobuffer-prev"
   grep -qx 'tmux=off' "$H/.config/autobuffer/conf" 2>/dev/null && ok "off is remembered" || bad "off not remembered"
@@ -255,6 +261,8 @@ BREAKS = [
     ('[ "$(conf_get tmux)" != off ]', "true", "off does not stick"),
     ("        conf_set tmux || exit 1", "        true", "on keeps the remembered off"),
     ('mkdir -p "$(dirname "$WELCOMED")" && : > "$WELCOMED"', "true", "the first-session note repeats"),
+    ("    \\; set-option -t \"$s\" status-right ' %H:%M '", "", "a long title squeezes the button out"),
+    ('\\; set-option -u -t "$s" status-right', "", "off keeps the short right side"),
     ('if [ ! -e "$WELCOMED" ]; then', "if false; then", "no first-session note"),
     ('"additionalContext":%s', '"additionalContext":%s,', "session-start JSON broken"),
 ]
