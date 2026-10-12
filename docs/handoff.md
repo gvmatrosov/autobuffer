@@ -1,4 +1,32 @@
-# Handoff — 2026-10-12
+# Handoff (last update 2026-10-12)
+
+## START HERE — next session: the owner reviews the descriptive texts, then the directory
+
+State: public at github.com/gvmatrosov/autobuffer, version 0.1.1, checked on the owner's phone
+(copy, tap, button at 46 columns, clean Claude outside the owner's home). Trial leftovers are all
+removed (sessions cc4/cc5, the trial config, the owner's tap binding restored exactly).
+
+Owner's plan (2026-10-12): in a new session, go through every text a stranger reads and decide
+the wording. The texts, all English:
+- `.claude-plugin/plugin.json` `description` + `keywords`, `.claude-plugin/marketplace.json`
+  `description` — what the directory and `/plugin` show;
+- `README.md` — the install line and "What happens";
+- `hooks/rule.md` — the rule Claude gets every session;
+- the first-session note inside `bin/autobuffer` (`session_start`);
+- `skills/setup/SKILL.md` — its `description` decides when Claude opens it.
+Explain each to the owner in plain Russian; change wording only after the owner's say. Any change
+people should get → bump `version` (repo rule), run tests + --mutate + validate, commit, push.
+
+Then: submit to Anthropic's plugin directory. Found by search, not yet opened: a portal at
+claude.ai/directory/manage (paid plans, a plugin is submitted as a GitHub repo) and a form at
+clau.de/plugin-directory-submission. Verify the current process before acting; submitting is the
+owner's step (their account).
+
+Open, owner's call: the memory note `evolupe-plugins` in the owner's harness still lists cop as
+part of evolupe-terminal (the harness was not touched this session). The owner's own `cop` has the
+same who-fallback flaw fixed here (writes to every SSH session); harmless on single-user machines.
+
+---
 
 autobuffer began as `cop` inside the owner's evolupe marketplace (evolupe-terminal) and was split
 out the same day (owner: "делаем отдельным. autobuffer") — a separate plugin, own repo, so it can
@@ -15,8 +43,8 @@ go public without evolupe's privacy scrub and is untouched by evolupe's rename t
 - tests/check.sh: bytes (fake tmux/who, files as ttys) + the button on a real tmux server with a
   robot thumb (tests/tap.py) tapping the status line at 46 columns; --mutate: 35 breaks, all red.
 - Plugin `bin/` is on the Bash tool's PATH; SessionStart additionalContext reaches the model.
-- At 46 columns with tmux's default status-right, "📋 copy" sits at columns ~13–20, not centred,
-  but present and tappable.
+- At 46 columns the button is drawn and tappable even with Claude's long task title (Claude's
+  session's right side is the clock only — see below).
 - On the owner's phone (Termius), 2026-10-12, the autobuffer build: the attach command copied by
   autobuffer arrived whole; in a separate tmux server (`-L abphone`) where `--session-start` had
   put the button into session "claude" only, a tap on 📋 copy pasted exactly the seeded text.
@@ -68,5 +96,5 @@ go public without evolupe's privacy scrub and is untouched by evolupe's rename t
   installing, which holds whatever the engine does.
 - The setup skill live; `send=` on a real Mac/WSL.
 
-## Before going public
+## Next
 - Submit to Anthropic's plugin directory.
