@@ -1,0 +1,9 @@
+{
+  "$schema": "https://anthropic.com/claude-code/marketplace.schema.json",
+  "name": "autobuffer",
+  "description": "The clipboard for Claude Code over SSH and from a phone.",
+  "owner": { "name": "gvmatrosov", "url": "https://github.com/gvmatrosov" },
+  "plugins": [
+    { "name": "autobuffer", "source": "./", "category": "productivity" }
+  ]
+}

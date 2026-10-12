@@ -1,0 +1,290 @@
+#!/usr/bin/env bash
+# autobuffer — put text on the clipboard of the device you are typing from (OSC 52).
+#
+# Why: on a phone terminal a long line wraps over several screen rows, and selecting it with a
+# finger turns the soft wraps into real newlines and drops spaces. OSC 52 is the escape code a
+# program uses to put text on the terminal's own clipboard: nothing to select, nothing to break.
+#
+# Two facts that make it work where the obvious way does not:
+# - tmux relays OSC 52 only to terminals it believes have a clipboard (xterm* and the like).
+#   Termius reports TERM=linux, so tmux silently drops it. autobuffer therefore writes the
+#   escape straight into the pty of every attached terminal, past tmux.
+# - Termius takes ONLY the ST-terminated form (ESC \), not the BEL form most tools send.
+#
+# Usage:
+#   autobuffer 'ssh -p 22 me@example.com'
+#   printf '%s' "$url" | autobuffer
+#   autobuffer --again [--tty /dev/pts/N]   the last copied text again
+#   autobuffer --tmux off|on                 the 📋 copy button: off for good / back on
+#   autobuffer --tap <tmux client>           what a tap on 📋 copy runs
+#   autobuffer --session-start               Claude Code's SessionStart hook
+#
+# Another way to the clipboard: a line `send=<shell command>` in $AUTOBUFFER_CONF makes
+# autobuffer pipe the text into that command instead of writing OSC 52 (pbcopy on a Mac,
+# wl-copy, clip.exe, a script of your own). The plugin's setup skill picks it for your stack.
+#
+# Trailing newlines are stripped on purpose: a newline on the clipboard makes the paste press
+# Enter and run a command before you have read it.
+set -uo pipefail
+
+CONF_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/autobuffer"
+CONF="${AUTOBUFFER_CONF:-$CONF_DIR/conf}"
+WELCOMED="${AUTOBUFFER_WELCOMED:-$CONF_DIR/welcomed}"
+STATE="${AUTOBUFFER_STATE:-${XDG_CACHE_HOME:-$HOME/.cache}/autobuffer/last}"
+DEV="${AUTOBUFFER_DEV:-/dev}"
+SELF="$(cd "$(dirname "$0")" && pwd)/$(basename "$0")"
+
+conf_get() { [ -r "$CONF" ] && sed -n "s/^$1=//p" "$CONF" | tail -n 1; }
+
+conf_set() {   # conf_set <key> [value] — no value removes the key
+  local tmp
+  mkdir -p "$(dirname "$CONF")" && touch "$CONF" || return 1
+  tmp="$(mktemp)" || return 1
+  grep -v "^$1=" "$CONF" > "$tmp"
+  [ "$#" -gt 1 ] && printf '%s=%s\n' "$1" "$2" >> "$tmp"
+  cat "$tmp" > "$CONF"; rm -f "$tmp"
+}
+
+send_cmd() {
+  [ -n "${AUTOBUFFER_SEND:-}" ] && { printf '%s' "$AUTOBUFFER_SEND"; return; }
+  conf_get send
+}
+
+# The tmux session whose pane called us. $TMUX_PANE can be lost on the way (sudo, env -i):
+# then the session id is the tail of $TMUX ("socket,pid,id").
+pane_session() {
+  if [ -n "${TMUX_PANE:-}" ]; then
+    tmux display-message -p -t "$TMUX_PANE" '#S' 2>/dev/null && return
+  fi
+  if [ -n "${TMUX:-}" ]; then
+    tmux display-message -p -t "\$${TMUX##*,}" '#S' 2>/dev/null
+  fi
+}
+
+# The session terminal $1 shows right now (tmux calls it client_name, usually the same
+# /dev/pts/N as client_tty — both are compared).
+client_session() {
+  tmux list-clients -F '#{client_name}	#{client_tty}	#{session_name}' 2>/dev/null \
+    | awk -F'\t' -v t="$1" '$1==t || $2==t { print $3; exit }'
+}
+
+# Each tmux session keeps its own "last copied": with two Claude sessions, a tap in one must
+# not paste a link the other one copied. Session name → file name: anything but letters,
+# digits, dot, dash and underscore becomes "_".
+session_state() {
+  local s="$1"
+  [ -n "$s" ] || return 1
+  s="$(printf '%s' "$s" | tr -c 'A-Za-z0-9._-' '_')"
+  printf '%s.%s' "$STATE" "$s"
+}
+
+# --- the 📋 copy button -----------------------------------------------------------------------
+#
+# Only in the tmux session Claude runs in, and only in tmux's memory (nothing is written to the
+# person's tmux config): that session's window list becomes "📋 copy", centred, and gets mouse
+# on — a tap needs it. Other sessions keep their own look and mouse setting.
+#
+# A tap on the window list is MouseDown1Status, and a key binding is shared by the whole tmux
+# server. So the binding asks the session first: marked @autobuffer → copy again; any other
+# session → whatever that tap did before (tmux's own select-window, or the person's binding,
+# kept in @autobuffer-prev). Re-bound at every session start, so it follows the plugin's path
+# after an update.
+
+TAP_CMD="run-shell -b \"'$SELF' --tap '#{client_name}'\""
+
+bind_tap() {
+  local cur prev
+  case "$SELF" in *"'"*|*'"'*) echo "autobuffer: a quote in the plugin path ($SELF) — no button" >&2; return 1 ;; esac
+  cur="$(tmux list-keys -T root MouseDown1Status 2>/dev/null | head -n 1)"
+  case "$cur" in
+    *"--tap '#{client_name}'"*) prev="$(tmux show-options -gv @autobuffer-prev 2>/dev/null)" ;;
+    "") prev="" ;;
+    *) prev="${cur#*MouseDown1Status }"; tmux set-option -g @autobuffer-prev "$prev" ;;
+  esac
+  if [ -n "$prev" ]; then
+    tmux bind-key -n MouseDown1Status if-shell -F '#{@autobuffer}' "$TAP_CMD" "$prev"
+  else
+    tmux bind-key -n MouseDown1Status if-shell -F '#{@autobuffer}' "$TAP_CMD"
+  fi
+}
+
+button_on() {   # button_on <session>
+  local s="$1"
+  [ -n "$s" ] || return 1
+  bind_tap || return 1
+  tmux set-option -t "$s" @autobuffer 1 \; set-option -t "$s" mouse on \
+    \; set-option -t "$s" window-status-format '' \
+    \; set-option -t "$s" window-status-current-format '📋 copy' \
+    \; set-option -t "$s" status-justify centre
+}
+
+button_off_everywhere() {
+  local s prev
+  tmux list-sessions -F '#{session_name}' 2>/dev/null | while IFS= read -r s; do
+    [ -n "$(tmux show-options -v -t "$s" @autobuffer 2>/dev/null)" ] || continue
+    tmux set-option -u -t "$s" @autobuffer \; set-option -u -t "$s" mouse \
+      \; set-option -u -t "$s" window-status-format \
+      \; set-option -u -t "$s" window-status-current-format \
+      \; set-option -u -t "$s" status-justify
+  done
+  case "$(tmux list-keys -T root MouseDown1Status 2>/dev/null)" in
+    *"--tap '#{client_name}'"*)
+      prev="$(tmux show-options -gv @autobuffer-prev 2>/dev/null)"
+      if [ -n "$prev" ]; then
+        printf 'bind-key -n MouseDown1Status %s\n' "$prev" | tmux source-file -
+      else
+        tmux unbind-key -n MouseDown1Status
+      fi ;;
+  esac
+  tmux set-option -gu @autobuffer-prev 2>/dev/null
+  return 0
+}
+
+json_string() {
+  local s="$1"
+  s="${s//\\/\\\\}"; s="${s//\"/\\\"}"; s="${s//$'\t'/\\t}"; s="${s//$'\r'/}"; s="${s//$'\n'/\\n}"
+  printf '"%s"' "$s"
+}
+
+session_start() {
+  local context button=0 s
+  if [ -n "${TMUX:-}" ] && [ "$(conf_get tmux)" != off ] && s="$(pane_session)" && [ -n "$s" ]; then
+    button_on "$s" && button=1
+  fi
+  context="$(cat "$(dirname "$SELF")/../hooks/rule.md" 2>/dev/null)"
+  [ -n "$context" ] || return 0
+  # The first session on this machine says once what the plugin did and proves the road with a
+  # paste. The mark is written now, so it is said once even if the person ignores it.
+  if [ ! -e "$WELCOMED" ]; then
+    mkdir -p "$(dirname "$WELCOMED")" && : > "$WELCOMED"
+    context+=$'\n\n'"[autobuffer] First session since autobuffer was installed on this machine. At the end of your first reply (after whatever the person asked), add a short note in their language:"
+    if [ "$button" = 1 ]; then
+      context+=" a 📋 copy button is now in the middle of this tmux session's status line — a tap puts the last copied text on the clipboard again; it lives only in this tmux session (mouse is on here, other sessions unchanged); \`autobuffer --tmux off\` removes it for good."
+    else
+      context+=" autobuffer is installed; there is no 📋 copy button because Claude is not running inside tmux."
+    fi
+    context+=" Then run \`autobuffer 'autobuffer-test-<4 random letters>'\` and ask them to paste their clipboard into the chat. An exact match: it works, say so. Anything else: offer the autobuffer setup skill."
+  fi
+  printf '{"hookSpecificOutput":{"hookEventName":"SessionStart","additionalContext":%s}}\n' "$(json_string "$context")"
+}
+
+case "${1:-}" in
+  --session-start) session_start; exit 0 ;;
+  --tmux)
+    case "${2:-}" in
+      off)
+        conf_set tmux off || exit 1
+        button_off_everywhere
+        echo "autobuffer: 📋 copy is off and stays off (autobuffer --tmux on brings it back)"; exit 0 ;;
+      on)
+        conf_set tmux || exit 1
+        if [ -n "${TMUX:-}" ] && s="$(pane_session)" && button_on "$s"; then
+          echo "autobuffer: 📋 copy is on in this tmux session"
+        else
+          echo "autobuffer: 📋 copy will appear when Claude starts inside tmux"
+        fi
+        exit 0 ;;
+      *) echo "autobuffer: --tmux off|on" >&2; exit 2 ;;
+    esac ;;
+  --tap)
+    client="${2:-}"
+    [ -n "$client" ] || exit 2
+    # The binding knows the client's name; the bytes go to its tty (usually the same path,
+    # not promised by tmux).
+    tty="$(tmux list-clients -F '#{client_name}	#{client_tty}' 2>/dev/null \
+      | awk -F'\t' -v c="$client" '$1==c { print $2; exit }')"
+    # run-shell would dump our output into the pane; the answer goes to that client's
+    # status line instead.
+    if msg="$("$SELF" --again --tty "${tty:-$client}" 2>&1)"; then
+      tmux display-message -c "$client" "${msg##*$'\n'}"
+    else
+      tmux display-message -c "$client" "📋 ${msg#autobuffer: }"
+    fi
+    exit 0 ;;
+esac
+
+again=0 only_tty=""
+while [ "$#" -gt 0 ]; do
+  case "$1" in
+    --again) again=1; shift ;;
+    --tty)   only_tty="${2:-}"; shift 2 ;;
+    *) break ;;
+  esac
+done
+
+if [ "$again" -eq 1 ]; then
+  if [ -n "$only_tty" ]; then sess="$(client_session "$only_tty")"; else sess="$(pane_session)"; fi
+  src="$(session_state "$sess")" && [ -s "$src" ] || src="$STATE"
+  if [ ! -s "$src" ]; then
+    echo "autobuffer: nothing copied yet — nothing to repeat" >&2
+    exit 1
+  fi
+  payload="$(cat "$src"; printf x)"; payload="${payload%x}"
+elif [ "$#" -gt 0 ]; then
+  payload="$*"
+else
+  payload="$(cat; printf x)"; payload="${payload%x}"
+fi
+
+while [ "${payload: -1}" = $'\n' ] || [ "${payload: -1}" = $'\r' ]; do
+  payload="${payload:0:${#payload}-1}"
+done
+
+if [ -z "$payload" ]; then
+  echo "autobuffer: empty text, nothing to copy" >&2
+  exit 1
+fi
+
+send="$(send_cmd)"
+if [ -n "$send" ]; then
+  if ! printf '%s' "$payload" | sh -c "$send"; then
+    echo "autobuffer: the send command failed: $send" >&2
+    exit 1
+  fi
+  where="via: $send"
+else
+  b64="$(printf '%s' "$payload" | base64 | tr -d '\n')"
+
+  # Where to: the terminals attached to tmux, else the SSH sessions `who` lists.
+  if [ -n "$only_tty" ]; then
+    ttys="$only_tty"
+  else
+    ttys="$(tmux list-clients -F '#{client_tty}' 2>/dev/null)"
+    [ -z "$ttys" ] && ttys="$(who 2>/dev/null | awk -v d="$DEV" '$NF ~ /^\(/ {print d"/"$2}')"
+  fi
+
+  if [ -z "$ttys" ]; then
+    echo "autobuffer: found no attached terminal — the autobuffer setup skill can find another way to this clipboard" >&2
+    exit 1
+  fi
+
+  sent=0
+  for t in $ttys; do
+    [ -w "$t" ] || continue
+    printf '\033]52;c;%s\033\\' "$b64" > "$t" 2>/dev/null && sent=$((sent+1))
+  done
+
+  if [ "$sent" -eq 0 ]; then
+    echo "autobuffer: terminals found but none could be written: $ttys" >&2
+    exit 1
+  fi
+
+  # Empirical: a very long escape may not pass a pty whole. Commands and links are far below.
+  if [ "${#b64}" -gt 4000 ]; then
+    echo "autobuffer: warning — ${#b64} bytes, the terminal may cut it; check the paste" >&2
+  fi
+  where="terminals: $sent"
+fi
+
+# Only what really went out is remembered: repeating a failed send would do nothing. Mode 600:
+# tokens get copied too.
+if [ "$again" -eq 0 ]; then
+  ( umask 077; mkdir -p "$(dirname "$STATE")" && printf '%s' "$payload" > "$STATE" ) 2>/dev/null \
+    || echo "autobuffer: sent, but not remembered for --again ($STATE)" >&2
+  if own="$(session_state "$(pane_session)")"; then
+    ( umask 077; printf '%s' "$payload" > "$own" ) 2>/dev/null \
+      || echo "autobuffer: sent, but not remembered for --again ($own)" >&2
+  fi
+fi
+
+echo "📋 on the clipboard (${#payload} chars, $where)"
