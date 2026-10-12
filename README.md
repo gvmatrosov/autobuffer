@@ -12,8 +12,9 @@ In Claude Code:
 /plugin install autobuffer --marketplace gvmatrosov/autobuffer
 ```
 
-That is all. Claude Code downloads the plugin into its own plugins folder and turns it on for
-every folder you work in. Claude Code only (the plugin ships a small program), not claude.ai.
+Then restart Claude Code. That is all: Claude Code downloads the plugin into its own plugins
+folder and turns it on for every folder you work in; the rule and the button arrive with the next
+session start. Claude Code only (the plugin ships a small program), not claude.ai.
 
 ## What happens
 
