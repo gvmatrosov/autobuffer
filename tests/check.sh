@@ -101,6 +101,16 @@ PS
   [ "$code" -ne 0 ] && ok "no terminal fails" || bad "no terminal must fail"
   case "$out" in *"setup skill"*) ok "the failure names the setup skill" ;; *) bad "failure text: $out" ;; esac
 
+  # Inside tmux with nobody attached (a phone app in the background lost its connection): the
+  # text waits, and a tap after coming back delivers it.
+  reset; echo A > "$T/pane-session"
+  out="$(TMUX_PANE_SET=1 c 'while away' 2>&1)"; code=$?
+  [ "$code" -eq 0 ] && ok "nobody attached in tmux is not a failure" || bad "nobody attached in tmux failed: $out"
+  case "$out" in *"tap on 📋 copy"*) ok "it says a tap delivers it" ;; *) bad "kept text: $out" ;; esac
+  case "$out" in *"setup skill"*) bad "nobody attached points to the setup skill" ;; *) ok "nobody attached is not a setup problem" ;; esac
+  clients2; c --tap /n1 >/dev/null
+  same "back, a tap delivers the text kept while away" "$T/pts/1" "$(osc 'while away')"
+
   reset; clients2
   c --tty "$T/pts/2" 'only two' >/dev/null
   [ -s "$T/pts/1" ] && bad "--tty also wrote another terminal" || ok "--tty leaves the others alone"
@@ -265,6 +275,9 @@ BREAKS = [
     ('\\; set-option -u -t "$s" status-right', "", "off keeps the short right side"),
     ('if [ ! -e "$WELCOMED" ]; then', "if false; then", "no first-session note"),
     ('"additionalContext":%s', '"additionalContext":%s,', "session-start JSON broken"),
+    ('if [ -n "${TMUX:-}" ] && [ -z "$only_tty" ]; then', "if false; then", "nobody attached: the text is lost"),
+    ("      remember\n      echo \"📋 kept", "      echo \"📋 kept", "nobody attached: said kept, not kept"),
+    ("puts it on their clipboard\"\n      exit 0", "puts it on their clipboard\"\n      exit 1", "nobody attached counts as a failure"),
 ]
 red = 0
 for old, new, why in BREAKS:

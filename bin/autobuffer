@@ -250,6 +250,18 @@ if [ -z "$payload" ]; then
   exit 1
 fi
 
+# Only what went out, or what waits for the person to come back, is remembered: repeating a
+# send= that failed would fail again. Mode 600: tokens get copied too.
+remember() {
+  [ "$again" -eq 0 ] || return 0
+  ( umask 077; mkdir -p "$(dirname "$STATE")" && printf '%s' "$payload" > "$STATE" ) 2>/dev/null \
+    || echo "autobuffer: not remembered for --again ($STATE)" >&2
+  if own="$(session_state "$(pane_session)")"; then
+    ( umask 077; printf '%s' "$payload" > "$own" ) 2>/dev/null \
+      || echo "autobuffer: not remembered for --again ($own)" >&2
+  fi
+}
+
 send="$(send_cmd)"
 if [ -n "$send" ]; then
   if ! printf '%s' "$payload" | sh -c "$send"; then
@@ -274,6 +286,13 @@ else
   fi
 
   if [ -z "$ttys" ]; then
+    # Inside tmux with no terminal attached, the person is away (a phone app in the background
+    # loses its connection): not a setup problem. Keep the text; a tap on 📋 copy delivers it.
+    if [ -n "${TMUX:-}" ] && [ -z "$only_tty" ]; then
+      remember
+      echo "📋 kept, not delivered: no terminal is attached to tmux right now — when the person is back, a tap on 📋 copy (or autobuffer --again) puts it on their clipboard"
+      exit 0
+    fi
     echo "autobuffer: found no attached terminal — the autobuffer setup skill can find another way to this clipboard" >&2
     exit 1
   fi
@@ -296,15 +315,5 @@ else
   where="terminals: $sent"
 fi
 
-# Only what really went out is remembered: repeating a failed send would do nothing. Mode 600:
-# tokens get copied too.
-if [ "$again" -eq 0 ]; then
-  ( umask 077; mkdir -p "$(dirname "$STATE")" && printf '%s' "$payload" > "$STATE" ) 2>/dev/null \
-    || echo "autobuffer: sent, but not remembered for --again ($STATE)" >&2
-  if own="$(session_state "$(pane_session)")"; then
-    ( umask 077; printf '%s' "$payload" > "$own" ) 2>/dev/null \
-      || echo "autobuffer: sent, but not remembered for --again ($own)" >&2
-  fi
-fi
-
+remember
 echo "📋 on the clipboard (${#payload} chars, $where)"

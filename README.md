@@ -23,10 +23,13 @@ session start. Claude Code only (the plugin ships a small program), not claude.a
    `autobuffer` and says in one line what is there. It lives in no file of yours; uninstall the
    plugin and the rule is gone.
 2. **Without tmux** the rule works the same; there is just no button (the setup skill can build
-   one for another setup). **Inside tmux**, the same start puts **📋 copy** in the middle of the status line of the tmux
-   session Claude runs in. A tap puts the last copied text on the clipboard again — the clipboard
-   is easy to overwrite, and the link Claude copied ten minutes ago has scrolled away. Only the
-   device that tapped gets it; each tmux session remembers its own last text.
+   one for another setup). **Inside tmux**, the same start puts **📋 copy** in the middle of the
+   status line of the tmux session Claude runs in. A tap puts the last copied text on the
+   clipboard again — the clipboard is easy to overwrite, and the link Claude copied ten minutes
+   ago has scrolled away. Only the device that tapped gets it; each tmux session remembers its
+   own last text. If no terminal is attached to tmux when Claude copies (a phone app in the
+   background has lost its connection), the text is kept and Claude says so; a tap after you are
+   back delivers it.
 3. **The first session** after installing, Claude says what was added and asks you to paste a test
    text once. OSC 52 — the escape that fills a terminal's clipboard — never reports back, so only
    your paste proves it works.
