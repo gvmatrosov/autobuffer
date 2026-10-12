@@ -41,17 +41,25 @@ EOF
 #!/usr/bin/env bash
 [ -f "$FAKE/who" ] && cat "$FAKE/who"
 EOF
-  chmod +x "$T/bin/tmux" "$T/bin/who"
+  cat > "$T/bin/ps" <<'PS'
+#!/usr/bin/env bash
+pid="${@: -1}"
+if [ -f "$FAKE/ps" ]; then
+  awk -v p="$pid" '$1==p { print $2, $3; f=1 } END { if (!f) print "1 ?" }' "$FAKE/ps"
+else echo "1 ?"; fi
+PS
+  printf '#!/usr/bin/env bash\necho me\n' > "$T/bin/id"
+  chmod +x "$T/bin/tmux" "$T/bin/who" "$T/bin/ps" "$T/bin/id"
 
   local ESC=$'\033'
   osc() { printf '%s]52;c;%s%s\\' "$ESC" "$(printf '%s' "$1" | base64 | tr -d '\n')" "$ESC"; }
   reset() {
-    rm -rf "$T/pts" "$T/home" "$T/tty1" "$T"/*.log "$T/clients" "$T/pane-session" "$T/who" "$T/sent" "$T/conf"
+    rm -rf "$T/pts" "$T/home" "$T/tty1" "$T"/*.log "$T/clients" "$T/pane-session" "$T/who" "$T/sent" "$T/conf" "$T/ps" "$T/pts9"
     mkdir -p "$T/pts" "$T/home"; : > "$T/pts/1"; : > "$T/pts/2"
   }
   c() {   # c <args…> — run autobuffer in the fake world
     env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" FAKE="$T" AUTOBUFFER_DEV="$T" \
-      ${TMUX_PANE_SET:+TMUX_PANE=%1} ${EXTRA_ENV:-} bash "$AB" "$@"
+      $([ -n "${NO_TMUX:-}" ] || printf 'TMUX=/fake,1,0') ${TMUX_PANE_SET:+TMUX_PANE=%1} ${EXTRA_ENV:-} bash "$AB" "$@"
   }
   ok()  { [ -n "$quiet" ] || echo "  ok   $1"; }
   bad() { echo "  RED  $1"; fails=$((fails+1)); }
@@ -73,13 +81,23 @@ EOF
   if printf '\n\n' | c >/dev/null 2>&1; then bad "empty text must fail"; else ok "empty text fails"; fi
   [ -s "$T/pts/1" ] && bad "empty text wrote to a terminal" || ok "empty text writes nothing"
 
-  reset; printf 'me pts/2 2026-10-12 10:00 (198.51.100.7)\nme tty1 2026-10-12 09:00\n' > "$T/who"
-  : > "$T/tty1"; c 'x' >/dev/null
-  same "no tmux: the SSH session from who" "$T/pts/2" "$(osc x)"
+  reset; printf 'me pts/2 2026-10-12 10:00 (198.51.100.7)\nme tty1 2026-10-12 09:00\nsomeone pts/1 2026-10-12 10:05 (198.51.100.8)\n' > "$T/who"
+  : > "$T/tty1"; NO_TMUX=1 c 'x' >/dev/null
+  same "no tmux, no own terminal: this user's SSH session from who" "$T/pts/2" "$(osc x)"
   [ -s "$T/tty1" ] && bad "a local console (no remote host) was written" || ok "local console lines are skipped"
+  [ -s "$T/pts/1" ] && bad "another user's terminal was written" || ok "another user's SSH session is never written"
+
+  # Outside tmux: the terminal Claude runs in, found up the process chain — and only that one.
+  # autobuffer's parent (the shell of Claude's Bash tool) has no tty; its parent, Claude, has one.
+  reset; clients2; printf 'me pts/1 2026-10-12 10:00 (198.51.100.7)\n' > "$T/who"
+  mkdir -p "$T/pts9"; : > "$T/pts9/9"
+  NO_TMUX=1 bash -c 'printf "%s 777 ?\n777 1 pts9/9\n" $$ > "$1/ps"; shift; "$@"; :' _ "$T" \
+    env -i PATH="$T/bin:/usr/bin:/bin" HOME="$T/home" FAKE="$T" AUTOBUFFER_DEV="$T" bash "$AB" own >/dev/null
+  same "outside tmux: the terminal Claude runs in" "$T/pts9/9" "$(osc own)"
+  { [ -s "$T/pts/1" ] || [ -s "$T/pts/2" ]; } && bad "outside tmux, other terminals were written too" || ok "outside tmux, nothing else is written"
 
   reset
-  out="$(c 'x' 2>&1)"; code=$?
+  out="$(NO_TMUX=1 c 'x' 2>&1)"; code=$?
   [ "$code" -ne 0 ] && ok "no terminal fails" || bad "no terminal must fail"
   case "$out" in *"setup skill"*) ok "the failure names the setup skill" ;; *) bad "failure text: $out" ;; esac
 
@@ -121,7 +139,7 @@ EOF
   case "$out" in *warning*) ok "a long text warns" ;; *) bad "no warning for a long text" ;; esac
 
   reset
-  out="$(c --session-start)"
+  out="$(NO_TMUX=1 c --session-start)"
   if printf '%s' "$out" | python3 -c 'import json,sys; d=json.load(sys.stdin)["hookSpecificOutput"]; assert d["hookEventName"]=="SessionStart"; c=d["additionalContext"]; assert "Clipboard rule" in c and "not running inside tmux" in c' 2>/dev/null
   then ok "outside tmux: the rule, and the first note says there is no button"; else bad "session-start outside tmux: $out"; fi
 
@@ -212,7 +230,11 @@ BREAKS = [
     ('    ttys="$only_tty"\n', '    ttys="$(tmux list-clients -F \'#{client_tty}\')"\n', "--tty ignored"),
     ('src="$(session_state "$sess")" && [ -s "$src" ] || src="$STATE"', 'src="$STATE"', "sessions share one memory"),
     ('print d"/"$2', 'print d"/"$1', "who: wrong column"),
-    ("$NF ~ /^\\(/ ", "1 ", "who: local consoles taken"),
+    ("$NF ~ /^\\(/ {", "1 {", "who: local consoles taken"),
+    ("$1 == u && ", "", "who: another user's terminal taken"),
+    ('[ -z "$ttys" ] && [ -z "${TMUX:-}" ] && ttys="$(own_tty)"', "true", "outside tmux, Claude's own terminal not used"),
+    ('    [ -n "${TMUX:-}" ] && ttys="$(tmux list-clients', '    ttys="$(tmux list-clients', "outside tmux, tmux clients come first"),
+    ('case "$tty" in ""|"?") ;;', 'case "$tty" in "") ;;', "a process without a terminal counts as one"),
     ('  where="via: $send"', '  where="via: $send"; printf x > "$(tmux list-clients -F \'#{client_tty}\' | head -n 1)"', "send= also writes a terminal"),
     ("""printf '%s' "$payload" | sh -c "$send\"""", 'sh -c "$send" </dev/null', "send= gets no text"),
     ("if ! printf '%s' \"$payload\"", "if printf '%s' \"$payload\"", "a failing send passes"),

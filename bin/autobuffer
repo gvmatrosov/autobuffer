@@ -78,6 +78,18 @@ session_state() {
   printf '%s.%s' "$STATE" "$s"
 }
 
+# The terminal of the nearest ancestor that has one (Claude Code's): our own stdin is a pipe.
+own_tty() {
+  local pid=$PPID line ppid tty i=0
+  while [ "${pid:-0}" -gt 1 ] && [ "$i" -lt 30 ]; do
+    line="$(ps -o ppid=,tty= -p "$pid" 2>/dev/null)" || return 1
+    read -r ppid tty <<< "$line"
+    case "$tty" in ""|"?") ;; *) printf '%s/%s' "$DEV" "$tty"; return 0 ;; esac
+    pid="$ppid"; i=$((i+1))
+  done
+  return 1
+}
+
 # --- the 📋 copy button -----------------------------------------------------------------------
 #
 # Only in the tmux session Claude runs in, and only in tmux's memory (nothing is written to the
@@ -245,12 +257,17 @@ if [ -n "$send" ]; then
 else
   b64="$(printf '%s' "$payload" | base64 | tr -d '\n')"
 
-  # Where to: the terminals attached to tmux, else the SSH sessions `who` lists.
+  # Where to, nearest first: inside tmux, the terminals attached to it (writing to our own pane
+  # would go through tmux, which drops it); outside, the terminal Claude itself runs in; then
+  # any tmux clients; last, this user's SSH sessions — never another user's terminal.
   if [ -n "$only_tty" ]; then
     ttys="$only_tty"
   else
-    ttys="$(tmux list-clients -F '#{client_tty}' 2>/dev/null)"
-    [ -z "$ttys" ] && ttys="$(who 2>/dev/null | awk -v d="$DEV" '$NF ~ /^\(/ {print d"/"$2}')"
+    ttys=""
+    [ -n "${TMUX:-}" ] && ttys="$(tmux list-clients -F '#{client_tty}' 2>/dev/null)"
+    [ -z "$ttys" ] && [ -z "${TMUX:-}" ] && ttys="$(own_tty)"
+    [ -z "$ttys" ] && ttys="$(tmux list-clients -F '#{client_tty}' 2>/dev/null)"
+    [ -z "$ttys" ] && ttys="$(who 2>/dev/null | awk -v d="$DEV" -v u="$(id -un)" '$1 == u && $NF ~ /^\(/ {print d"/"$2}')"
   fi
 
   if [ -z "$ttys" ]; then

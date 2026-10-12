@@ -22,7 +22,8 @@ session start. Claude Code only (the plugin ships a small program), not claude.a
    expected to paste — a command, a link, a token, a path — Claude puts on your clipboard with
    `autobuffer` and says in one line what is there. It lives in no file of yours; uninstall the
    plugin and the rule is gone.
-2. **Inside tmux**, the same start puts **📋 copy** in the middle of the status line of the tmux
+2. **Without tmux** the rule works the same; there is just no button (the setup skill can build
+   one for another setup). **Inside tmux**, the same start puts **📋 copy** in the middle of the status line of the tmux
    session Claude runs in. A tap puts the last copied text on the clipboard again — the clipboard
    is easy to overwrite, and the link Claude copied ten minutes ago has scrolled away. Only the
    device that tapped gets it; each tmux session remembers its own last text.
@@ -48,7 +49,8 @@ brings it back.
 
 - tmux passes OSC 52 on only to terminals it believes have a clipboard. Termius reports
   `TERM=linux`, so tmux drops it silently. autobuffer writes the escape straight into the pty of
-  each attached terminal, past tmux (outside tmux: the SSH sessions `who` lists).
+  each attached terminal, past tmux. Outside tmux it writes to the terminal Claude itself runs in;
+  it never writes to another user's terminal.
 - Termius takes only the ST-terminated form (`ESC \`), not the BEL form most tools send.
 - Trailing newlines are stripped: a newline on the clipboard would make the paste run the command.
 - The last text is kept in `~/.cache/autobuffer/` with mode 600 — tokens get copied too.
@@ -63,6 +65,6 @@ autobuffer --again        # the last text again
 
 `tests/check.sh` — the exact bytes each terminal receives; the button on a real tmux server with a
 robot thumb that attaches like a 46-column phone and taps the status line end to end.
-`tests/check.sh --mutate` breaks autobuffer at 29 spots, one at a time; each must turn a check red.
+`tests/check.sh --mutate` breaks autobuffer at 33 spots, one at a time; each must turn a check red.
 
 MIT license.
