@@ -55,6 +55,8 @@ brings it back.
 
 - **Network: nothing.** autobuffer sends no data anywhere; the text goes only to your own
   terminal (or to the `send=` command you approved).
+- **Credentials: none read.** autobuffer reads no keys, tokens or passwords of yours. A token
+  reaches it only when Claude copies one for you to paste, and then only your clipboard gets it.
 - **Your terminals:** the clipboard escape is written to the terminals attached to Claude's tmux
   server, or outside tmux to the terminal Claude runs in. Never another user's.
 - **Files:** the last copied text in `~/.cache/autobuffer/` (mode 600), a settings file
